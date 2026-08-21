@@ -1,0 +1,6 @@
+// ইচ্ছাকৃত টাইপ ভুল দেখানোর জন্য (intentionally triggers a semantic type error)
+শুরু
+    পূর্ণ x = 5;
+    দশমিক y = 3.5;
+    x = y;
+শেষ

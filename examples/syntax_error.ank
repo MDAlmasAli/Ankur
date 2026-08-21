@@ -1,0 +1,6 @@
+// ইচ্ছাকৃত সিনট্যাক্স ভুল ও পুনরুদ্ধার দেখানোর জন্য (intentionally triggers a syntax error + recovery)
+শুরু
+    পূর্ণ x = 5
+    পূর্ণ y = 6;
+    দেখাও(y);
+শেষ
