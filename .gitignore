@@ -1,0 +1,7 @@
+out/
+generated/
+Reference/
+*.class
+.vscode/
+.idea/
+*.iml
