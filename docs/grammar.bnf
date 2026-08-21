@@ -1,0 +1,140 @@
+CSE-4114 Compiler Design Project
+Formal Grammar for অঙ্কুর (Ankur)
+
+Notation: ::= means "is defined as", | is alternation, { x } means zero-or-more
+repetitions of x, [ x ] means x is optional, terminals are quoted.
+
+Implementation status: every rule below is implemented by the lexer, parser,
+and semantic analyzer, and every statement form is handled by the Java code
+generator (ankur.codegen.JavaCodeGenerator) -- see "Compiling to Java" below
+for the source-to-target mapping. Nothing in this grammar is aspirational;
+docs/Ankur-Final-Report.md's Future Roadmap covers what's deliberately not
+in the language yet (booleans as a declarable type, functions, strings).
+
+------------------------------------------------------------------------
+Program
+------------------------------------------------------------------------
+
+<program>          ::= "শুরু" <statement-list> "শেষ"
+
+<statement-list>    ::= { <statement> }
+
+<statement>         ::= <var-decl>
+                       | <assignment>
+                       | <if-stmt>
+                       | <while-stmt>
+                       | <print-stmt>
+
+<block>             ::= "শুরু" <statement-list> "শেষ"
+
+------------------------------------------------------------------------
+Declarations and Statements
+------------------------------------------------------------------------
+
+<var-decl>          ::= <type> <identifier> [ "=" <expression> ] ";"
+
+<type>               ::= "পূর্ণ"        (* int *)
+                        | "দশমিক"      (* float *)
+
+<assignment>         ::= <identifier> "=" <expression> ";"
+
+<if-stmt>            ::= "যদি" "(" <expression> ")" <block>
+                          [ "নাহলে" <block> ]
+
+<while-stmt>         ::= "যতক্ষণ" "(" <expression> ")" <block>
+
+<print-stmt>         ::= "দেখাও" "(" <expression> ")" ";"
+
+------------------------------------------------------------------------
+Expressions (precedence climbing, lowest to highest precedence)
+------------------------------------------------------------------------
+
+<expression>         ::= <logical-or>
+
+<logical-or>         ::= <logical-and> { "||" <logical-and> }
+
+<logical-and>        ::= <equality> { "&&" <equality> }
+
+<equality>           ::= <relational> { ( "==" | "!=" ) <relational> }
+
+<relational>         ::= <additive> { ( "<" | ">" | "<=" | ">=" ) <additive> }
+
+<additive>           ::= <multiplicative> { ( "+" | "-" ) <multiplicative> }
+
+<multiplicative>     ::= <unary> { ( "*" | "/" | "%" ) <unary> }
+
+<unary>              ::= ( "!" | "-" | "+" ) <unary>
+                        | <primary>
+
+<primary>            ::= <int-literal>
+                        | <float-literal>
+                        | <identifier>
+                        | "(" <expression> ")"
+
+------------------------------------------------------------------------
+Lexical Grammar
+------------------------------------------------------------------------
+
+<identifier>          ::= <id-start> { <id-part> }
+<id-start>            ::= bangla-letter | ascii-letter
+<id-part>             ::= <id-start> | <digit> | "_"
+
+<int-literal>         ::= <digit> { <digit> }
+<float-literal>       ::= <digit> { <digit> } "." <digit> { <digit> }
+<digit>               ::= bangla-digit | ascii-digit
+
+bangla-letter          ::= any character in Unicode U+0980..U+09FF that is
+                           not a bangla-digit
+bangla-digit            ::= "০" | "১" | "২" | "৩" | "৪" | "৫" | "৬" | "৭" | "৮" | "৯"
+                            (Unicode U+09E6..U+09EF)
+ascii-letter            ::= "a".."z" | "A".."Z" | "_"
+ascii-digit             ::= "0".."9"
+
+comment                 ::= "//" { any character except newline } newline
+
+Whitespace (space, tab, carriage return, newline) and comments are not
+significant and may appear between any two tokens. Numeral scripts may be
+mixed freely: ৫ and 5 both denote the integer five.
+
+------------------------------------------------------------------------
+Two Data Types (course requirement 2.1)
+------------------------------------------------------------------------
+
+পূর্ণ    (Purno)     -- integer type
+দশমিক   (Doshomik)  -- floating point type
+
+A third, non-declarable type, BOOLEAN, exists only as the result of
+relational (==, !=, <, >, <=, >=) and logical (&&, ||, !) operators. It
+cannot be stored in a variable in this version of the language -- see the
+"Future Roadmap" note in docs/Ankur-Final-Report.md. যদি/যতক্ষণ conditions
+must be of type BOOLEAN; a bare number is a semantic error.
+
+------------------------------------------------------------------------
+Type Checking Rules (implemented in ankur.semantic.SemanticAnalyzer)
+------------------------------------------------------------------------
+
+1. A variable must be declared before use, and not already declared in
+   the current scope.
+2. Arithmetic operators (+ - * / %) require both operands to be numeric
+   (পূর্ণ or দশমিক). Result is দশমিক if either operand is দশমিক, else পূর্ণ.
+3. Relational operators require both operands numeric; result is BOOLEAN.
+4. Logical operators (&& || !) require BOOLEAN operand(s); result is
+   BOOLEAN.
+5. Assignment (including a var-decl initializer) allows পূর্ণ -> দশমিক
+   widening, but rejects দশমিক -> পূর্ণ narrowing as a type error.
+6. Each block (if/else/while body) introduces a new scope; an inner
+   declaration may shadow an outer one of the same name without error.
+7. A পূর্ণ literal must fit in a 32-bit signed int (matching the Java `int`
+   it compiles to); out of range is a semantic error, not a codegen crash.
+
+------------------------------------------------------------------------
+Compiling to Java (ankur.codegen.JavaCodeGenerator)
+------------------------------------------------------------------------
+
+পূর্ণ -> int, দশমিক -> double. Operators map 1:1 to Java's own symbols, so
+no translation table is needed there. Every generated variable name is
+prefixed ("v_<name>_<n>") with a globally unique counter per declaration --
+this is not cosmetic: Ankur allows a nested block to shadow an outer
+variable (rule 6 above), but Java rejects redeclaring a name already in an
+enclosing scope, so reusing the source name directly would make shadowing
+Ankur programs fail to compile.
