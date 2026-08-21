@@ -103,7 +103,7 @@ member can explain any part of it in a review.
 |---|---|---|---|
 | 1 | MD Almas Ali | 0182320012101068 | sy164425@gmail.com |
 | 2 | Abidur Rahman Chowdhury | 0182320012101074 | abidc5778@gmail.com |
-| 3 | Shajnin Rahman Omi | 0182320012101065 | — |
+| 3 | Shajnin Rahman Omi | 0182320012101065 | shajninomi@gmail.com |
 | 4 | Arman Hassan Rifat | 0182320012101075 | rifatarmanhasan@gmail.com |
 | 5 | Md Shahriar Khan | 0182320012101051 | shahriarkhan155@gmail.com |
 
