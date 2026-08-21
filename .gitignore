@@ -1,6 +1,8 @@
 out/
 generated/
 Reference/
+team-commit-plan.md
+team-commit-plan.docx
 *.class
 .vscode/
 .idea/
