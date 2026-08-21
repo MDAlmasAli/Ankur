@@ -115,7 +115,7 @@ for the full assignment specification.
 ---
 
 <p align="center">
-  <i>অঙ্কুর doesn't ask a learner to stay in Bangla forever — it asks them to start there.</i>
+  <i>অঙ্কুর doesn't ask a learner to stay in Bangla forever, it asks them to start there.</i>
   <br>
   <sub><b>অঙ্কুর</b> · CSE-4114 Compiler Design and Construction Sessional · 2026</sub>
 </p>
