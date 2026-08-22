@@ -1,5 +1,7 @@
 out/
 generated/
+*.env
+github.env
 Reference/
 team-commit-plan.md
 team-commit-plan.docx
