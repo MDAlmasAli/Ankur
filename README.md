@@ -107,11 +107,6 @@ member can explain any part of it in a review.
 | 4 | Arman Hassan Rifat | 0182320012101075 | rifatarmanhasan@gmail.com |
 | 5 | Md Shahriar Khan | 0182320012101051 | shahriarkhan155@gmail.com |
 
-## Course requirements
-
-See [`CSE-4114_Project_Requirements.pdf`](CSE-4114_Project_Requirements.pdf)
-for the full assignment specification.
-
 ---
 
 <p align="center">
