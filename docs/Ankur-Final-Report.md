@@ -2,7 +2,15 @@
 
 **Course:** CSE-4114 — Compiler Design and Construction Sessional
 **Project:** A compiler for an originally-invented Bangla programming language
-**Team:** *(fill in from [`Team.txt`](../Team.txt))*
+**Team:**
+
+| # | Name | Student ID |
+|---|---|---|
+| 1 | MD Almas Ali | 0182320012101068 |
+| 2 | Abidur Rahman Chowdhury | 0182320012101074 |
+| 3 | Shajnin Rahman Omi | 0182320012101065 |
+| 4 | Arman Hassan Rifat | 0182320012101075 |
+| 5 | Md Shahriar Khan | 0182320012101051 |
 
 This report covers the three required sections: the Pitch, the Compiler
 Design, and the Language Grammar.
