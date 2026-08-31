@@ -40,6 +40,16 @@ public final class JavaCodeGenerator {
             genStmt(stmt, 2, sb);
         }
         sb.append("    }\n");
+        // Ankur accepts Bangla-Indic and ASCII digits equally on the way in (see Lexer); this
+        // keeps the output side matching by rendering every printed number back out in
+        // Bangla-Indic digits, so a fully-Bangla program reads as fully Bangla end to end.
+        sb.append("\n    private static String bnDigits(Object value) {\n");
+        sb.append("        StringBuilder out = new StringBuilder();\n");
+        sb.append("        for (char c : String.valueOf(value).toCharArray()) {\n");
+        sb.append("            out.append(c >= '0' && c <= '9' ? (char) ('\\u09E6' + (c - '0')) : c);\n");
+        sb.append("        }\n");
+        sb.append("        return out.toString();\n");
+        sb.append("    }\n");
         sb.append("}\n");
 
         scopes.pop();
@@ -70,9 +80,9 @@ public final class JavaCodeGenerator {
             }
             case PrintStmt p -> {
                 indent(indentLevel, sb);
-                sb.append("System.out.println(");
+                sb.append("System.out.println(bnDigits(");
                 genExpr(p.value(), sb);
-                sb.append(");\n");
+                sb.append("));\n");
             }
             case IfStmt i -> {
                 indent(indentLevel, sb);

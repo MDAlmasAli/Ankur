@@ -84,7 +84,7 @@ member can explain any part of it in a review.
 ## Try it
 
 ```powershell
-.\run.ps1 examples\while_loop.ank      # sums 1..10, prints 55
+.\run.ps1 examples\while_loop.ank      # sums 1..10, prints ৫৫
 .\run.ps1 examples\type_error.ank      # a caught semantic error, no crash
 .\run.ps1 examples\syntax_error.ank    # a caught syntax error, with recovery
 ```
