@@ -23,6 +23,25 @@ public final class LexerTest {
         check("relational and logical operators", LexerTest::operators);
         check("line comments are skipped", LexerTest::lineComment);
         check("unknown character is reported but scanning recovers", LexerTest::unknownCharacterRecovers);
+        check("বাক্য literal is scanned with its escapes resolved", LexerTest::stringLiteral);
+        check("an unterminated বাক্য literal is reported", LexerTest::unterminatedStringLiteral);
+    }
+
+    private static void stringLiteral() {
+        ErrorReporter reporter = new ErrorReporter();
+        List<Token> tokens = lex("বাক্য ন = \"মাহিদ\\n\";", reporter);
+        assertEquals(TokenType.BAKKO, tokens.get(0).type, "the type keyword");
+        assertEquals(TokenType.STRING_LITERAL, tokens.get(3).type, "the literal");
+        // The lexeme is the decoded text: quotes stripped and the two-character escape turned
+        // into a real newline, so no later phase has to know the source's escape syntax.
+        assertEquals("মাহিদ\n", tokens.get(3).lexeme, "decoded value");
+        assertTrue(!reporter.hasErrors(), "no lexical errors expected");
+    }
+
+    private static void unterminatedStringLiteral() {
+        ErrorReporter reporter = new ErrorReporter();
+        lex("বাক্য ন = \"মাহিদ;", reporter);
+        assertTrue(reporter.hasErrors(), "an unterminated বাক্য literal should be reported");
     }
 
     private static List<Token> lex(String source, ErrorReporter reporter) {

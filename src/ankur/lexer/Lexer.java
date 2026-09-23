@@ -17,6 +17,7 @@ public final class Lexer {
         KEYWORDS.put("শেষ", TokenType.SHESH);
         KEYWORDS.put("পূর্ণ", TokenType.PURNO);
         KEYWORDS.put("দশমিক", TokenType.DOSHOMIK);
+        KEYWORDS.put("বাক্য", TokenType.BAKKO);
         KEYWORDS.put("যদি", TokenType.JODI);
         KEYWORDS.put("নাহলে", TokenType.NAHOLE);
         KEYWORDS.put("যতক্ষণ", TokenType.JOTOKHON);
@@ -64,6 +65,10 @@ public final class Lexer {
             return scanNumber(c, startLine, startCol);
         }
 
+        if (c == '"') {
+            return scanString(startLine, startCol);
+        }
+
         switch (c) {
             case '+': return make(TokenType.PLUS, "+", startLine, startCol);
             case '-': return make(TokenType.MINUS, "-", startLine, startCol);
@@ -108,6 +113,43 @@ public final class Lexer {
         String text = sb.toString();
         TokenType type = KEYWORDS.getOrDefault(text, TokenType.IDENTIFIER);
         return make(type, text, startLine, startCol);
+    }
+
+    // A বাক্য literal: "...". The token's lexeme is the decoded text, without the surrounding
+    // quotes and with escapes already resolved, so nothing downstream has to unescape again.
+    private Token scanString(int startLine, int startCol) {
+        StringBuilder sb = new StringBuilder();
+        while (!isAtEnd() && peek() != '"') {
+            char c = advance();
+            if (c == '\n') {
+                // Stop at the end of the line rather than swallowing the rest of the file
+                // looking for a closing quote that may never come.
+                reporter.report(Phase.LEXICAL, startLine, startCol, "Unterminated বাক্য literal");
+                return make(TokenType.STRING_LITERAL, sb.toString(), startLine, startCol);
+            }
+            if (c == '\\' && !isAtEnd()) {
+                char escaped = advance();
+                switch (escaped) {
+                    case 'n' -> sb.append('\n');
+                    case 't' -> sb.append('\t');
+                    case '"' -> sb.append('"');
+                    case '\\' -> sb.append('\\');
+                    default -> {
+                        reporter.report(Phase.LEXICAL, startLine, startCol,
+                                "Unknown escape '\\" + escaped + "' in a বাক্য literal");
+                        sb.append(escaped);
+                    }
+                }
+                continue;
+            }
+            sb.append(c);
+        }
+        if (isAtEnd()) {
+            reporter.report(Phase.LEXICAL, startLine, startCol, "Unterminated বাক্য literal");
+        } else {
+            advance(); // consume the closing quote
+        }
+        return make(TokenType.STRING_LITERAL, sb.toString(), startLine, startCol);
     }
 
     private Token scanNumber(char first, int startLine, int startCol) {
