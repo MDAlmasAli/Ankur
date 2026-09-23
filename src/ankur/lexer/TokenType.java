@@ -6,15 +6,17 @@ public enum TokenType {
     SHESH,      // শেষ     - end program / block
     PURNO,      // পূর্ণ    - int type
     DOSHOMIK,   // দশমিক   - float type
+    BAKKO,      // বাক্য    - string type
     JODI,       // যদি     - if
     NAHOLE,     // নাহলে   - else
-    JOTOKHON,   // যতক্ষণ   - while (grammar defines it; parser/semantic support lands in Phase 2)
+    JOTOKHON,   // যতক্ষণ   - while
     DEKHAO,     // দেখাও   - print
 
     // Literals
     IDENTIFIER,
     INT_LITERAL,
     FLOAT_LITERAL,
+    STRING_LITERAL,
 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
