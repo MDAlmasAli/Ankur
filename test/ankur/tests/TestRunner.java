@@ -16,6 +16,15 @@ public final class TestRunner {
 
     private static int passed = 0;
     private static int failed = 0;
+    private static int skipped = 0;
+
+    // Reports a test that could not run because the machine lacks something it needs (the
+    // WebAssembly tests need a WebAssembly host). Reported separately from a pass, so a
+    // missing tool can never be mistaken for a working feature.
+    public static void skip(String name, String reason) {
+        skipped++;
+        System.out.println("  SKIP  " + name + " -> " + reason);
+    }
 
     public static void check(String name, TestCase testCase) {
         try {
@@ -50,11 +59,18 @@ public final class TestRunner {
         ParserTest.runAll();
         System.out.println("Semantic Analyzer");
         SemanticAnalyzerTest.runAll();
-        System.out.println("Code Generator");
+        System.out.println("Three Address Code");
+        TacGeneratorTest.runAll();
+        System.out.println("Code Generator (Java)");
         JavaCodeGeneratorTest.runAll();
+        System.out.println("Code Generator (Python)");
+        PythonCodeGeneratorTest.runAll();
+        System.out.println("Code Generator (WebAssembly)");
+        WasmCodeGeneratorTest.runAll();
 
         System.out.println();
-        System.out.println(passed + " passed, " + failed + " failed");
+        System.out.println(passed + " passed, " + failed + " failed"
+                + (skipped > 0 ? ", " + skipped + " skipped" : ""));
         if (failed > 0) {
             System.exit(1);
         }

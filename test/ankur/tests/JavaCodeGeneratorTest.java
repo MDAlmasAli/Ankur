@@ -29,6 +29,8 @@ public final class JavaCodeGeneratorTest {
         check("generated Java compiles for if-else", JavaCodeGeneratorTest::compilesIfElse);
         check("generated Java compiles for a while loop", JavaCodeGeneratorTest::compilesWhileLoop);
         check("shadowed variables still produce compilable Java", JavaCodeGeneratorTest::shadowingCompiles);
+        check("a shadowing declaration reads the outer variable in its initializer",
+                JavaCodeGeneratorTest::shadowingInitializerCompiles);
     }
 
     private static Program compileToValidatedAst(String source) {
@@ -78,5 +80,15 @@ public final class JavaCodeGeneratorTest {
         assertCompiles(
                 "শুরু পূর্ণ x = 1; যদি (x > 0) শুরু পূর্ণ x = 2; দেখাও(x); শেষ দেখাও(x); শেষ",
                 "ShadowCodegenTest");
+    }
+
+    // The initializer of a shadowing declaration still refers to the OUTER variable, because
+    // SemanticAnalyzer only brings the new name into scope after checking the initializer.
+    // Generating the declaration before its initializer would emit `int v_x_1 = (v_x_1 + 1);`,
+    // which javac rejects as a self-reference -- so this is a compile failure if the order slips.
+    private static void shadowingInitializerCompiles() throws IOException {
+        assertCompiles(
+                "শুরু পূর্ণ x = 1; যদি (x > 0) শুরু পূর্ণ x = x + 1; দেখাও(x); শেষ শেষ",
+                "ShadowInitCodegenTest");
     }
 }
