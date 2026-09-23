@@ -75,13 +75,18 @@ day one.
 
 - Boolean as a first-class declarable type (today it exists only
   transiently, as the result of a comparison)
-- A string/text type and basic text I/O — needed for anything beyond
-  arithmetic demos
+- String operators: `বাক্য` values can be declared, assigned and printed
+  today, but not concatenated or compared. Concatenation means building a
+  new string at run time, which needs an allocator the WebAssembly target
+  does not have, so it waits until that target grows a heap
+- Text input, to go with the text output `বাক্য` already provides
 - Functions (`ফাংশন`) for code reuse
 - A small standard library of Bangla-named built-ins (math, I/O)
 - A VS Code extension: Bangla keyword autocomplete, inline diagnostics
-- A WebAssembly backend (the course's own optional bonus target) for
-  in-browser execution — a zero-install "try Ankur now" demo for classrooms
+- An in-browser playground built on the WebAssembly backend described in
+  §2 — a zero-install "try Ankur now" page for classrooms. The compiler
+  already emits a module a browser can run directly, so what is left is the
+  page around it, not the compiler work
 - Companion lesson materials aimed at teachers, not just the language itself
 
 ---
@@ -90,7 +95,7 @@ day one.
 
 ### Architecture overview
 
-Ankur is a classical four-pass compiler, hand-written in pure Java 21 with
+Ankur is a classical multi-pass compiler, hand-written in pure Java 21 with
 **zero external dependencies** — no parser generator (e.g. ANTLR), no
 codegen framework, and no test framework (tests run against the JDK's own
 compiler API). That was a deliberate choice: the project requirements
@@ -113,23 +118,86 @@ framework-mediated code.
 3. **Semantic analysis** (`ankur.semantic.SemanticAnalyzer`) is a single
    recursive walk over the AST performing scope resolution (a chained
    `SymbolTable` per block, so a nested block may shadow an outer
-   declaration) and type checking (an `INT | FLOAT | BOOLEAN | UNKNOWN`
-   lattice, where `UNKNOWN` is an error-recovery sentinel that suppresses
-   cascading errors after an earlier one).
-4. **Code generation** (`ankur.codegen.JavaCodeGenerator`) is a second walk,
-   over an already-validated AST, that emits Java source text directly (no
-   intermediate representation — reasonable given the target is itself a
-   structured high-level language with near 1:1 control-flow
+   declaration) and type checking (an `INT | FLOAT | STRING | BOOLEAN |
+   UNKNOWN` lattice, where `UNKNOWN` is an error-recovery sentinel that
+   suppresses cascading errors after an earlier one). It also records the
+   resolved type of *every expression node*, which is as much its output as
+   the error list is: two of the three code generators need those types,
+   because neither WebAssembly nor Python can be handed an expression and
+   asked what it meant, and re-deriving the rules in each backend would be
+   three copies waiting to disagree.
+4. **Intermediate representation** (`ankur.tac.TacGenerator`) lowers the
+   validated AST to three-address code: every expression is flattened into
+   one operation per instruction over named operands (`t1 = ৩ * ৪`,
+   `t2 = ২ + t1`), and `যদি`/`যতক্ষণ` become explicit labels and jumps. The
+   three code generators do not read this list — all three targets have
+   structured control flow of their own, and rebuilding `if`/`while` from
+   jumps would be work for nothing. It is here because it is the
+   representation an optimiser or a real machine backend starts from, and
+   because printing it makes the flattening visible while a program is
+   still small enough to read by eye.
+5. **Code generation** (`ankur.codegen.JavaCodeGenerator`) is a second walk,
+   over an already-validated AST, that emits Java source text directly (it
+   does not go through the TAC above — reasonable given the target is itself
+   a structured high-level language with near 1:1 control-flow
    correspondence). It maintains **its own** lexical-scope tracking,
    independent of the semantic analyzer's, because it needs to solve a
    problem the semantic analyzer doesn't have: Ankur allows a nested block
    to shadow an outer variable name, but Java refuses to redeclare a name
-   already in an enclosing scope. Every declaration is therefore emitted
-   under a fresh, counter-suffixed Java name. This is the single most
-   subtle correctness issue in the codebase, and it's covered directly by
-   an automated test that compiles the generated Java with the JDK's own
+   already in an enclosing scope. Only a declaration that actually does
+   that — resolves to something still on the enclosing-scope stack — gets
+   a counter-suffixed name; an ordinary, non-shadowing declaration (nearly
+   every declaration in a real program) keeps the author's own Bangla
+   identifier verbatim, so the generated Java reads like the source
+   instead of a wall of synthetic names. This is the single most subtle
+   correctness issue in the codebase, and it's covered directly by an
+   automated test that compiles the generated Java with the JDK's own
    compiler API and asserts success — not just that the generator "looks
    right."
+6. **Python code generation** (`ankur.codegen.PythonCodeGenerator`) targets
+   the other language the course allows. Python is structurally the closest
+   of the three — it has `if`/`else`, `while`, and arbitrary-precision
+   integers — but it gets two things wrong for Ankur by default. Its `/` is
+   always float division, so `পূর্ণ / পূর্ণ` has to be emitted as `//`; and
+   it has *no block scope at all*, so a name assigned inside an `if` is the
+   same variable as one outside it, and a genuinely shadowing declaration
+   needs the same renaming the Java target uses — while an ordinary
+   declaration keeps its bare name, same as there.
+7. **WebAssembly code generation** (`ankur.codegen.WasmCodeGenerator`, the
+   course's optional bonus target) is an alternative second walk over the
+   same validated AST. Where the Java generator can lean on the target
+   being another structured high-level language, WebAssembly is a typed
+   stack machine, which forces three things the Java path never has to
+   think about:
+   - **Post-order emission.** Operands are pushed first and the operator
+     instruction consumes them, so `ক + খ` becomes `local.get`,
+     `local.get`, `i32.add`.
+   - **No implicit conversion, at all.** Java widens `int` to `double`
+     silently; WebAssembly does not, so the generator re-derives the type
+     of every expression and inserts `f64.convert_i32_s` wherever Ankur's
+     rules allow a পূর্ণ where a দশমিক is expected.
+   - **Flat function-level locals.** Every local must be declared at the
+     top of the function, so Ankur's block scoping is resolved entirely at
+     compile time by giving each declaration its own local index — which is
+     also, conveniently, what makes shadowing work here.
+
+   Three smaller mismatches are worth naming because they are where a naive
+   translation would silently produce a *wrong* program rather than an
+   invalid one: WebAssembly has no `while` (it is built from a `block`
+   wrapped around a `loop`), no f64 remainder instruction (দশমিক `%` is
+   computed as `a - trunc(a / b) * b` through scratch locals), and no
+   short-circuiting `and`/`or` (using `i32.and` would evaluate both sides,
+   so `&&` and `||` are emitted as a structured `if` that yields an `i32`).
+
+   The generator produces an instruction list rather than text, and two
+   writers consume it: `WatWriter` renders the readable `.wat` text format,
+   and `WasmBinaryWriter` encodes the same list as a real binary `.wasm`
+   module (LEB128 integers, the section layout from the WebAssembly core
+   specification, and all). Emitting the binary in-house rather than
+   shelling out to `wat2wasm` keeps the project free of third-party tools
+   and means the output runs on any WebAssembly host as-is. Since a module
+   has no I/O of its own, `দেখাও` is an imported host function, and
+   `NodeRunnerGenerator` emits the small JavaScript host that supplies it.
 
 A shared `ankur.errors` package (`Phase`, `CompileError`, `ErrorReporter`)
 lets every phase collect *all* of its errors in one pass instead of
@@ -143,18 +211,32 @@ flowchart LR
     Source[".ank source file"] --> Lexer
     Lexer -->|tokens| Parser
     Parser -->|AST| SemanticAnalyzer["SemanticAnalyzer"]
+    SemanticAnalyzer -->|validated AST| TacGenerator["TacGenerator"]
     SemanticAnalyzer -->|validated AST| JavaCodeGenerator["JavaCodeGenerator"]
-    JavaCodeGenerator -->|Java source| Output["generated/ClassName.java"]
+    SemanticAnalyzer -->|validated AST| PythonCodeGenerator["PythonCodeGenerator"]
+    SemanticAnalyzer -->|validated AST| WasmCodeGenerator["WasmCodeGenerator"]
+    TacGenerator -->|three-address code| TacOut["generated/Name.tac"]
+    JavaCodeGenerator -->|Java source| JavaOut["generated/Name.java"]
+    PythonCodeGenerator -->|Python source| PyOut["generated/Name.py"]
+    WasmCodeGenerator -->|instruction list| WatWriter["WatWriter"]
+    WasmCodeGenerator -->|instruction list| WasmBinaryWriter["WasmBinaryWriter"]
+    WatWriter -->|text format| WatOut["generated/Name.wat"]
+    WasmBinaryWriter -->|binary module| WasmOut["generated/Name.wasm"]
 
     Lexer -.->|errors| ErrorReporter
     Parser -.->|errors| ErrorReporter
     SemanticAnalyzer -.->|errors| ErrorReporter
 ```
 
-`Main` (not pictured) orchestrates the four phases in sequence and owns the
+`Compiler` (not pictured) orchestrates the phases in sequence and owns the
 shared `ErrorReporter`, stopping the pipeline if any phase reports an
-error. Note `JavaCodeGenerator` has no edge into `ErrorReporter` — see the
-note after the next diagram for why.
+error; `Main` and the playground GUI both call it and differ only in where
+they put the report it returns. The three code generators are alternatives
+selected by `--target`, not stages of one another: each walks the same
+validated AST independently, and `TacGenerator` runs whatever the target
+is, being an intermediate step rather than something the user asked for.
+Note that no generator has an edge into `ErrorReporter` — see the note
+after the next diagram for why.
 
 ### AST class hierarchy
 
@@ -297,8 +379,33 @@ classDiagram
         <<enumeration>>
         INT
         FLOAT
+        STRING
         BOOLEAN
         UNKNOWN
+    }
+    class TacGenerator {
+        -List~TacInstr~ instructions
+        -int temporaryCount
+        -int labelCount
+        +generate(Program) List~TacInstr~
+        -genIf(IfStmt) void
+        -genWhile(WhileStmt) void
+    }
+    class TacInstr {
+        <<sealed interface>>
+        Copy
+        BinOp
+        UnOp
+        IfFalseGoto
+        Goto
+        Label
+        Print
+    }
+    class PythonCodeGenerator {
+        -Map~Expr,Type~ types
+        -Deque~Map~ scopes
+        +generate(Program) String
+        -pythonOperator(BinaryExpr) String
     }
     class JavaCodeGenerator {
         -Deque~Map~ scopes
@@ -306,6 +413,49 @@ classDiagram
         +generate(Program, String) String
         -declare(String) String
         -resolve(String) String
+    }
+    class Compiler {
+        +compile(String, String, Target, Path) Result
+    }
+    class WasmCodeGenerator {
+        -Map~Expr,Type~ types
+        -Deque~Map~ scopes
+        -List~WasmType~ localTypes
+        -ByteArrayOutputStream stringPool
+        +generate(Program, String) WasmModule
+        -genWhile(WhileStmt, List) void
+        -genString(Expr, List) void
+    }
+    class WasmModule {
+        String name
+        List~WasmType~ locals
+        List~Instr~ body
+        byte[] data
+    }
+    class Instr {
+        <<sealed interface>>
+        Op
+        ConstI32
+        ConstF64
+        LocalGet
+        LocalSet
+        Call
+        If
+        Block
+        Loop
+        Br
+        BrIf
+    }
+    class WatWriter {
+        +write(WasmModule) String
+    }
+    class WasmBinaryWriter {
+        +write(WasmModule) byte[]
+    }
+    class WasmType {
+        <<enumeration>>
+        I32
+        F64
     }
     class ErrorReporter {
         -List~CompileError~ errors
@@ -328,13 +478,27 @@ classDiagram
     SymbolTable --> Symbol : stores
     Symbol --> Type
     ErrorReporter --> CompileError : collects
+    SemanticAnalyzer --> Type : records per expression
+    TacGenerator --> TacInstr : emits
+    PythonCodeGenerator --> Type : reads
+    WasmCodeGenerator --> WasmModule : builds
+    WasmCodeGenerator --> WasmType : assigns
+    WasmModule --> Instr : holds
+    WatWriter --> WasmModule : renders as text
+    WasmBinaryWriter --> WasmModule : encodes as binary
 ```
 
-Note that `JavaCodeGenerator` has no dependency on `ErrorReporter` — by
-design. It only ever runs on a `Program` that `SemanticAnalyzer` already
-validated with zero errors, so it has nothing left to report; an
-unresolved identifier reaching codegen is treated as an internal invariant
-violation (`IllegalStateException`), not a normal compile error.
+Note that none of the three code generators depends on `ErrorReporter` —
+by design. Each only ever runs on a `Program` that
+`SemanticAnalyzer` already validated with zero errors, so it has nothing
+left to report; an unresolved identifier reaching codegen is treated as an
+internal invariant violation (`IllegalStateException`), not a normal
+compile error.
+
+`WatWriter` and `WasmBinaryWriter` both consume the same `WasmModule`
+rather than one being derived from the other's output. That is deliberate:
+the `.wat` a reader checks by eye and the `.wasm` a host actually executes
+are then the same instructions by construction, and cannot drift apart.
 
 ---
 
@@ -350,7 +514,7 @@ reproduced here in full for the report.
 <block>             ::= "শুরু" <statement-list> "শেষ"
 
 <var-decl>          ::= <type> <identifier> [ "=" <expression> ] ";"
-<type>              ::= "পূর্ণ" | "দশমিক"
+<type>              ::= "পূর্ণ" | "দশমিক" | "বাক্য"
 <assignment>        ::= <identifier> "=" <expression> ";"
 <if-stmt>           ::= "যদি" "(" <expression> ")" <block> [ "নাহলে" <block> ]
 <while-stmt>        ::= "যতক্ষণ" "(" <expression> ")" <block>
@@ -364,16 +528,19 @@ reproduced here in full for the report.
 <additive>           ::= <multiplicative> { ( "+" | "-" ) <multiplicative> }
 <multiplicative>     ::= <unary> { ( "*" | "/" | "%" ) <unary> }
 <unary>              ::= ( "!" | "-" | "+" ) <unary> | <primary>
-<primary>            ::= <int-literal> | <float-literal> | <identifier> | "(" <expression> ")"
+<primary>            ::= <int-literal> | <float-literal> | <string-literal>
+                        | <identifier> | "(" <expression> ")"
 
 <identifier>         ::= <id-start> { <id-part> }
 <id-start>           ::= bangla-letter | ascii-letter
 <id-part>            ::= <id-start> | <digit> | "_"
 <int-literal>        ::= <digit> { <digit> }
 <float-literal>      ::= <digit> { <digit> } "." <digit> { <digit> }
+<string-literal>     ::= '"' { <string-char> } '"'
 <digit>              ::= bangla-digit | ascii-digit
 ```
 
 See `grammar.bnf` for the full lexical-grammar definitions (exact Unicode
-ranges), the two-data-type / type-checking rules, and the Ankur→Java
-code-generation mapping.
+ranges), the data-type and type-checking rules, the three-address code
+lowering, and the Ankur→Java, Ankur→Python and Ankur→WebAssembly
+code-generation mappings.

@@ -1,13 +1,6 @@
 package ankur;
 
-import ankur.codegen.JavaCodeGenerator;
-import ankur.errors.ErrorReporter;
-import ankur.lexer.Lexer;
-import ankur.lexer.Token;
-import ankur.parser.Parser;
-import ankur.parser.ast.AstPrinter;
-import ankur.parser.ast.Program;
-import ankur.semantic.SemanticAnalyzer;
+import ankur.report.Console;
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -16,9 +9,12 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
+// The command-line front end. All the actual work lives in ankur.Compiler, which returns the
+// phase-by-phase report as text; this class only deals with arguments and printing.
 public final class Main {
+
+    private static final Path OUTPUT_DIR = Path.of("generated");
 
     public static void main(String[] args) {
         // Windows JVMs default stdout/stderr to the system codepage (e.g. Cp1252), which
@@ -35,9 +31,26 @@ public final class Main {
     }
 
     private static void run(String[] args) throws IOException {
-        if (args.length != 1) {
-            System.out.println("Usage: java -cp out ankur.Main <source-file.ank>");
+        if (args.length < 1) {
+            System.out.println("Usage: java -cp out ankur.Main <source-file.ank> [--target=java|python|wasm|all]");
             return;
+        }
+
+        Compiler.Target target = Compiler.Target.ALL;
+        for (int i = 1; i < args.length; i++) {
+            String arg = args[i];
+            if (!arg.startsWith("--target=")) {
+                System.out.println("Unknown option: " + arg);
+                return;
+            }
+            String value = arg.substring("--target=".length()).toUpperCase();
+            try {
+                target = Compiler.Target.valueOf(value);
+            } catch (IllegalArgumentException unknown) {
+                System.out.println("Unknown target '" + value.toLowerCase()
+                        + "' (expected java, python, wasm or all)");
+                return;
+            }
         }
 
         Path path = Path.of(args[0]);
@@ -47,87 +60,9 @@ public final class Main {
         }
 
         String source = Files.readString(path);
-        ErrorReporter reporter = new ErrorReporter();
+        Compiler.Result result = Compiler.compile(source, Compiler.toClassName(path), target, OUTPUT_DIR);
 
-        System.out.println("== Lexical Analysis ==");
-        Lexer lexer = new Lexer(source, reporter);
-        List<Token> tokens = lexer.scanTokens();
-        System.out.println("Scanned " + tokens.size() + " tokens.");
-        if (reporter.hasErrors()) {
-            printErrorsAndStop(reporter, "lexical");
-            return;
-        }
-
-        System.out.println();
-        System.out.println("== Syntax Analysis ==");
-        Parser parser = new Parser(tokens, reporter);
-        Program program = parser.parseProgram();
-        if (reporter.hasErrors()) {
-            // Print the AST anyway: error recovery means parsing kept going past the bad
-            // statement(s), and that recovered tree is worth showing, not just the error.
-            System.out.println("Parsed with errors (showing the recovered AST below).");
-            System.out.println();
-            System.out.println(AstPrinter.print(program));
-            printErrorsAndStop(reporter, "syntax");
-            return;
-        }
-        System.out.println("Parsed successfully.");
-        System.out.println();
-        System.out.println(AstPrinter.print(program));
-
-        System.out.println("== Semantic Analysis ==");
-        SemanticAnalyzer analyzer = new SemanticAnalyzer(reporter);
-        analyzer.analyze(program);
-        if (reporter.hasErrors()) {
-            printErrorsAndStop(reporter, "semantic");
-            return;
-        }
-        System.out.println("No semantic errors found.");
-
-        System.out.println();
-        System.out.println("== Code Generation (Java) ==");
-        String className = toClassName(path);
-        String javaSource = new JavaCodeGenerator().generate(program, className);
-
-        Path outputDir = Path.of("generated");
-        Files.createDirectories(outputDir);
-        Path outputFile = outputDir.resolve(className + ".java");
-        Files.writeString(outputFile, javaSource, StandardCharsets.UTF_8);
-
-        System.out.println("Wrote " + outputFile);
-        System.out.println("Try it: javac -d generated/out " + outputFile + " && java -cp generated/out " + className);
-        System.out.println();
-
-        System.out.println("Compilation successful: no lexical, syntax, or semantic errors found.");
-    }
-
-    private static void printErrorsAndStop(ErrorReporter reporter, String phase) {
-        System.out.println();
-        System.out.println("Compilation failed during " + phase + " analysis:");
-        reporter.printAll();
-    }
-
-    // Derives a valid, PascalCase Java class name from the source file's base name, since
-    // Java requires the public class name to match its .java file name exactly.
-    private static String toClassName(Path sourcePath) {
-        String base = sourcePath.getFileName().toString();
-        int dot = base.lastIndexOf('.');
-        if (dot > 0) {
-            base = base.substring(0, dot);
-        }
-        StringBuilder sb = new StringBuilder();
-        boolean capitalizeNext = true;
-        for (char c : base.toCharArray()) {
-            if (!Character.isLetterOrDigit(c)) {
-                capitalizeNext = true;
-                continue;
-            }
-            sb.append(capitalizeNext ? Character.toUpperCase(c) : c);
-            capitalizeNext = false;
-        }
-        if (sb.isEmpty() || !Character.isJavaIdentifierStart(sb.charAt(0))) {
-            sb.insert(0, "Ankur");
-        }
-        return sb.toString();
+        Console.verdict(result.report(), result.success());
+        System.out.print(result.report().text());
     }
 }

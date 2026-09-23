@@ -1,4 +1,5 @@
-# Runs the Ankur compiler front end against a source file, e.g. .\run.ps1 examples\hello.ank
+# Runs the Ankur compiler against a source file, e.g. .\run.ps1 examples\hello.ank
+# Pass --target=java, --target=python, --target=wasm, or --target=all (the default).
 $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
@@ -10,9 +11,10 @@ if (-not (Test-Path $outDir)) {
 }
 
 if ($args.Count -lt 1) {
-    Write-Host "Usage: .\run.ps1 <path-to-.ank-file>"
+    Write-Host "Usage: .\run.ps1 <path-to-.ank-file> [--target=java|python|wasm|all]"
     Write-Host "Example: .\run.ps1 examples\hello.ank"
+    Write-Host "Example: .\run.ps1 examples\greeting.ank --target=python"
     exit 1
 }
 
-java -cp $outDir ankur.Main $args[0]
+java -cp $outDir ankur.Main @args

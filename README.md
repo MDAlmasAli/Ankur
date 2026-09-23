@@ -9,10 +9,11 @@ Built for CSE-4114 — Compiler Design and Construction Sessional
 
 Ankur (অঙ্কুর, "sprout") is a toy programming language whose keywords and
 identifiers are written entirely in Bangla script — `শুরু`/`শেষ` for begin
-and end, `পূর্ণ`/`দশমিক` for int and float, `যদি`/`নাহলে` for if/else,
-`যতক্ষণ` for while, `দেখাও` for print. This repository is its compiler:
-a hand-written lexer, parser, semantic analyzer, and Java code generator,
-built entirely in Java 21 with no external frameworks — no ANTLR, no
+and end, `পূর্ণ`/`দশমিক`/`বাক্য` for int, float and string, `যদি`/`নাহলে`
+for if/else, `যতক্ষণ` for while, `দেখাও` for print. This repository is its
+compiler: a hand-written lexer, parser, semantic analyzer, three-address
+code generator, and three back ends (Java, Python and WebAssembly), built
+entirely in Java 21 with no external frameworks — no ANTLR, no
 Maven/Gradle, no third-party libraries anywhere, including in the tests.
 
 ```
@@ -21,8 +22,10 @@ Maven/Gradle, no third-party libraries anywhere, including in the tests.
 দেখাও(x + y);
 ```
 
-compiles straight to runnable Java, verified end-to-end: real `javac`,
-real `java`, real output.
+compiles straight to runnable Java, Python **and** a real binary
+WebAssembly module — all three verified end-to-end by the test suite: real
+`javac`, real `java`, a real interpreter, a real WebAssembly host, real
+output, and the three agree line for line.
 
 ## Status
 
@@ -30,7 +33,7 @@ Every minimum required compiler feature is implemented and tested:
 
 | Feature | Status |
 |---|---|
-| Two data types (`পূর্ণ` int, `দশমিক` float) with type checking | ✅ |
+| Two data types with type checking (Ankur has three: `পূর্ণ` int, `দশমিক` float, `বাক্য` string) | ✅ |
 | Arithmetic with correct operator precedence | ✅ |
 | Assignment statements | ✅ |
 | `যদি` / `নাহলে` (if / else) | ✅ |
@@ -39,40 +42,68 @@ Every minimum required compiler feature is implemented and tested:
 | Syntax error recovery | ✅ |
 | No runtime crashes (graceful error handling) | ✅ |
 | Code generation to Java | ✅ |
-| WebAssembly target (optional) | Not implemented |
+| Code generation to Python | ✅ |
+| Three-address code (intermediate representation) | ✅ — beyond the requirements |
+| WebAssembly target (optional bonus) | ✅ — both `.wat` and a binary `.wasm` |
 
 ## Getting started
 
 Requires JDK 21+. No build tool needed — everything runs through three
-PowerShell scripts.
+PowerShell scripts. Python and Node.js are optional: they are only needed
+to *run* the Python and WebAssembly output, never to produce it.
 
 ```powershell
-.\build.ps1                        # compile src/ and test/ into out/
-.\run.ps1 examples\hello.ank        # compile a source file, including Java codegen
+.\build.ps1                         # compile src/ and test/ into out/
+.\run.ps1 examples\hello.ank        # compile a source file to every target
 .\test.ps1                          # build, then run the full test suite
 ```
 
-`run.ps1` prints the token stream, the parsed syntax tree, and any
-lexical/syntax/semantic errors with line:column positions. On a clean
-compile it writes `generated/<ClassName>.java` and prints the exact
-`javac`/`java` commands to run it.
+`run.ps1` prints a numbered source listing and then one banner per phase:
+the token stream, the parsed syntax tree, the symbol table, and the
+generated target code — plus any lexical/syntax/semantic errors with their
+line:column positions.
+
+On a clean compile it writes, into `generated/`:
+
+| File | What it is |
+|---|---|
+| `<Name>.tac` | the three-address code, the compiler's own intermediate representation |
+| `<Name>.java` | the Java target (course requirement 2.1) |
+| `<Name>.py` | the Python target (the other language requirement 2.1 allows) |
+| `<Name>.wat` | the WebAssembly text format, readable side by side with the source |
+| `<Name>.wasm` | a real binary module, encoded by the compiler itself — no `wat2wasm` needed |
+| `<Name>.mjs` | the small JavaScript host that supplies `দেখাও` and starts the module |
+
+Pick one back end with `--target=java`, `--target=python` or
+`--target=wasm`; the default is `--target=all`. The `.tac` file is written
+whatever the target is, since it is an intermediate step rather than
+something you asked for. Running the Java output needs only a JDK; Python
+needs an interpreter, and WebAssembly needs a host such as Node.js 16+.
 
 ## Project structure
 
 ```
 src/ankur/
-  Main.java              entry point: lexer -> parser -> semantic analyzer -> codegen
+  Main.java              the command-line front end: arguments and printing
+  Compiler.java          the pipeline itself, returning the phase-by-phase report
   errors/                 shared error reporting (ErrorReporter, CompileError, Phase)
   lexer/                  TokenType, Token, Lexer
   parser/                 Parser (hand-written recursive descent)
   parser/ast/             sealed Expr/Stmt hierarchies (Java records) + AstPrinter
   semantic/               Type, Symbol, SymbolTable, SemanticAnalyzer
+  tac/                    TacGenerator/TacInstr — the intermediate representation
   codegen/                JavaCodeGenerator — Ankur AST to Java source
+                          PythonCodeGenerator — Ankur AST to Python 3 source
+                          WasmCodeGenerator — Ankur AST to a WebAssembly module
+                          NodeRunnerGenerator — the JS host for a .wasm module
+  codegen/wasm/           Instr/WasmModule (the instruction model), WatWriter
+                          (.wat text) and WasmBinaryWriter (binary .wasm)
+  report/                 Console — phase banners and Bangla-Indic numerals
 
 test/ankur/tests/         dependency-free test harness, one suite per phase
 
 docs/
-  grammar.bnf             complete formal grammar (BNF) + Java codegen mapping
+  grammar.bnf             complete formal grammar (BNF) + all three codegen mappings
   Ankur-Final-Report.md   Pitch + Compiler Design (UML) + Grammar report
 
 examples/                 sample .ank programs, including deliberate error cases
@@ -85,8 +116,14 @@ member can explain any part of it in a review.
 
 ```powershell
 .\run.ps1 examples\while_loop.ank      # sums 1..10, prints ৫৫
+.\run.ps1 examples\greeting.ank        # বাক্য (string) type plus if/else
 .\run.ps1 examples\type_error.ank      # a caught semantic error, no crash
 .\run.ps1 examples\syntax_error.ank    # a caught syntax error, with recovery
+
+# then run any of the three targets -- same program, same output
+javac -d generated\out generated\WhileLoop.java; java -cp generated\out WhileLoop
+python generated\WhileLoop.py
+node generated\WhileLoop.mjs
 ```
 
 ## Documentation

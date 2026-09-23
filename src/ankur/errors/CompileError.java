@@ -1,5 +1,7 @@
 package ankur.errors;
 
+import ankur.report.Console;
+
 public final class CompileError {
     private final Phase phase;
     private final int line;
@@ -29,8 +31,10 @@ public final class CompileError {
         return message;
     }
 
+    // The position is printed in Bangla-Indic digits so that it matches the numbered source
+    // listing the compiler prints above it, which is what a reader traces the error back to.
     @Override
     public String toString() {
-        return String.format("[%s] line %d:%d - %s", phase, line, column, message);
+        return String.format("[%s] লাইন %s:%s - %s", phase, Console.bn(line), Console.bn(column), message);
     }
 }
