@@ -31,6 +31,26 @@ public final class SemanticAnalyzerTest {
         check("a variable with an initializer is not use-before-init", SemanticAnalyzerTest::initializerCountsAsAssigned);
         check("dividing an int literal by literal 0 is an error", SemanticAnalyzerTest::intDivisionByLiteralZeroRejected);
         check("dividing by a float literal 0.0 is allowed", SemanticAnalyzerTest::floatDivisionByZeroAllowed);
+        check("a বাক্য variable accepts a বাক্য value", SemanticAnalyzerTest::stringAssignmentAllowed);
+        check("assigning a number to a বাক্য variable is an error", SemanticAnalyzerTest::stringTypeMismatchRejected);
+        check("arithmetic on a বাক্য is an error", SemanticAnalyzerTest::stringArithmeticRejected);
+    }
+
+    private static void stringAssignmentAllowed() {
+        ErrorReporter reporter = analyze("শুরু বাক্য ন = \"মাহিদ\"; ন = \"রিফাত\"; দেখাও(ন); শেষ");
+        assertTrue(!reporter.hasErrors(), "expected no errors, got: " + reporter.errors());
+    }
+
+    private static void stringTypeMismatchRejected() {
+        ErrorReporter reporter = analyze("শুরু বাক্য ন = ৫; শেষ");
+        assertTrue(reporter.hasErrors(), "assigning পূর্ণ to a বাক্য should be an error");
+    }
+
+    // Strings have no operators in this version of the language: producing a new one at run
+    // time would need an allocator the WebAssembly target does not have. See the roadmap.
+    private static void stringArithmeticRejected() {
+        ErrorReporter reporter = analyze("শুরু বাক্য ক = \"এক\"; বাক্য খ = \"দুই\"; দেখাও(ক + খ); শেষ");
+        assertTrue(reporter.hasErrors(), "adding two বাক্য values should be an error");
     }
 
     private static ErrorReporter analyze(String source) {

@@ -13,19 +13,49 @@ import ankur.parser.ast.NumberLiteral;
 import ankur.parser.ast.PrintStmt;
 import ankur.parser.ast.Program;
 import ankur.parser.ast.Stmt;
+import ankur.parser.ast.StringLiteral;
 import ankur.parser.ast.UnaryExpr;
 import ankur.parser.ast.UnaryOp;
 import ankur.parser.ast.VarDeclStmt;
-import ankur.parser.ast.VarType;
 import ankur.parser.ast.WhileStmt;
+
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 
 public final class SemanticAnalyzer {
 
     private final ErrorReporter reporter;
     private SymbolTable scope = new SymbolTable(null);
 
+    // Every symbol declared anywhere in the program, in declaration order, kept so the
+    // compiler can print a symbol table for the semantic analysis phase. The scope chain
+    // above cannot be walked for this: each block's table is discarded once the block ends.
+    private final List<Symbol> declaredSymbols = new ArrayList<>();
+
+    // The resolved type of every expression node, keyed by identity (two equal literals are
+    // still two separate nodes). This is the analyzer's real output alongside the error list:
+    // the code generators need it because their targets have no implicit conversions and no
+    // way to ask what an expression meant, and re-deriving it in each backend would be three
+    // copies of the same type rules waiting to disagree.
+    private final Map<Expr, Type> expressionTypes = new IdentityHashMap<>();
+
+    // A human-readable line per check that passed, for the semantic analysis report.
+    private final List<String> checks = new ArrayList<>();
+
     public SemanticAnalyzer(ErrorReporter reporter) {
         this.reporter = reporter;
+    }
+
+    // The resolved type of every expression in the program, for the code generators.
+    public Map<Expr, Type> expressionTypes() {
+        return expressionTypes;
+    }
+
+    // One line per check that passed, in the order they were made.
+    public List<String> checks() {
+        return checks;
     }
 
     public void analyze(Program program) {
@@ -40,7 +70,12 @@ public final class SemanticAnalyzer {
             case AssignStmt a -> analyzeAssign(a);
             case IfStmt i -> analyzeIf(i);
             case WhileStmt w -> analyzeWhile(w);
-            case PrintStmt p -> analyzeExpr(p.value());
+            case PrintStmt p -> {
+                Type printed = analyzeExpr(p.value());
+                if (printed != Type.UNKNOWN) {
+                    checks.add("দেখাও argument → " + describe(printed));
+                }
+            }
             case BlockStmt b -> analyzeBlock(b, new SymbolTable(scope));
         }
     }
@@ -50,12 +85,25 @@ public final class SemanticAnalyzer {
             reporter.report(Phase.SEMANTIC, v.line(), v.column(),
                     "Variable '" + v.name() + "' is already declared in this scope");
         }
-        Type declaredType = v.type() == VarType.PURNO ? Type.INT : Type.FLOAT;
+        Type declaredType = switch (v.type()) {
+            case PURNO -> Type.INT;
+            case DOSHOMIK -> Type.FLOAT;
+            case BAKKO -> Type.STRING;
+        };
         if (v.initializer() != null) {
             Type initType = analyzeExpr(v.initializer());
             checkAssignable(declaredType, initType, v.name(), v.line(), v.column());
         }
-        scope.declare(new Symbol(v.name(), declaredType, v.line(), v.initializer() != null));
+        Symbol symbol = new Symbol(v.name(), declaredType, v.line(), v.initializer() != null);
+        scope.declare(symbol);
+        declaredSymbols.add(symbol);
+        checks.add(v.name() + " → " + describe(declaredType));
+    }
+
+    // The program's symbols in declaration order. A name declared twice (in different scopes)
+    // appears once per declaration, which is what makes shadowing visible in the report.
+    public List<Symbol> declaredSymbols() {
+        return declaredSymbols;
     }
 
     private void analyzeAssign(AssignStmt a) {
@@ -68,6 +116,7 @@ public final class SemanticAnalyzer {
         if (symbol != null) {
             checkAssignable(symbol.type, valueType, a.name(), a.line(), a.column());
             symbol.initialized = true;
+            checks.add(a.name() + " → " + describe(symbol.type));
         }
     }
 
@@ -76,10 +125,14 @@ public final class SemanticAnalyzer {
         if (conditionType != Type.BOOLEAN && conditionType != Type.UNKNOWN) {
             reporter.report(Phase.SEMANTIC, i.condition().line(), i.condition().column(),
                     "The condition of 'যদি' must be a boolean expression (e.g. x > 5), not " + describe(conditionType));
+        } else if (conditionType == Type.BOOLEAN) {
+            checks.add("যদি condition → BOOLEAN");
         }
         analyzeBlock(i.thenBranch(), new SymbolTable(scope));
+        checks.add("যদি (THEN) scope valid");
         if (i.elseBranch() != null) {
             analyzeBlock(i.elseBranch(), new SymbolTable(scope));
+            checks.add("নাহলে (ELSE) scope valid");
         }
     }
 
@@ -88,8 +141,11 @@ public final class SemanticAnalyzer {
         if (conditionType != Type.BOOLEAN && conditionType != Type.UNKNOWN) {
             reporter.report(Phase.SEMANTIC, w.condition().line(), w.condition().column(),
                     "The condition of 'যতক্ষণ' must be a boolean expression (e.g. x < 10), not " + describe(conditionType));
+        } else if (conditionType == Type.BOOLEAN) {
+            checks.add("যতক্ষণ condition → BOOLEAN");
         }
         analyzeBlock(w.body(), new SymbolTable(scope));
+        checks.add("যতক্ষণ body scope valid");
     }
 
     private void analyzeBlock(BlockStmt block, SymbolTable childScope) {
@@ -105,7 +161,14 @@ public final class SemanticAnalyzer {
     }
 
     private Type analyzeExpr(Expr expr) {
+        Type type = resolveExpr(expr);
+        expressionTypes.put(expr, type);
+        return type;
+    }
+
+    private Type resolveExpr(Expr expr) {
         return switch (expr) {
+            case StringLiteral ignored -> Type.STRING;
             case NumberLiteral n -> {
                 // Codegen emits পূর্ণ as a Java `int`; reject here so an out-of-range literal
                 // is a clear semantic error instead of a mysterious javac failure downstream.
@@ -231,6 +294,7 @@ public final class SemanticAnalyzer {
         return switch (t) {
             case INT -> "পূর্ণ (int)";
             case FLOAT -> "দশমিক (float)";
+            case STRING -> "বাক্য (string)";
             case BOOLEAN -> "boolean";
             case UNKNOWN -> "unknown";
         };
