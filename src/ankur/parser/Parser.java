@@ -15,6 +15,7 @@ import ankur.parser.ast.NumberLiteral;
 import ankur.parser.ast.PrintStmt;
 import ankur.parser.ast.Program;
 import ankur.parser.ast.Stmt;
+import ankur.parser.ast.StringLiteral;
 import ankur.parser.ast.UnaryExpr;
 import ankur.parser.ast.UnaryOp;
 import ankur.parser.ast.VarDeclStmt;
@@ -65,7 +66,7 @@ public final class Parser {
     }
 
     private Stmt statement() {
-        if (check(TokenType.PURNO) || check(TokenType.DOSHOMIK)) {
+        if (check(TokenType.PURNO) || check(TokenType.DOSHOMIK) || check(TokenType.BAKKO)) {
             return varDeclStatement();
         }
         if (check(TokenType.JODI)) {
@@ -87,7 +88,11 @@ public final class Parser {
 
     private Stmt varDeclStatement() {
         Token typeToken = advance();
-        VarType varType = typeToken.type == TokenType.PURNO ? VarType.PURNO : VarType.DOSHOMIK;
+        VarType varType = switch (typeToken.type) {
+            case PURNO -> VarType.PURNO;
+            case DOSHOMIK -> VarType.DOSHOMIK;
+            default -> VarType.BAKKO;
+        };
         Token nameToken = consume(TokenType.IDENTIFIER, "Expected a variable name after the type");
         Expr initializer = null;
         if (match(TokenType.ASSIGN)) {
@@ -256,6 +261,10 @@ public final class Parser {
             advance();
             return NumberLiteral.ofFloat(parseFloatLiteral(token.lexeme), token.lexeme, token.line, token.column);
         }
+        if (token.type == TokenType.STRING_LITERAL) {
+            advance();
+            return new StringLiteral(token.lexeme, token.line, token.column);
+        }
         if (token.type == TokenType.IDENTIFIER) {
             advance();
             return new IdentifierExpr(token.lexeme, token.line, token.column);
@@ -358,7 +367,7 @@ public final class Parser {
                 return;
             }
             boolean atStatementStart = switch (peek().type) {
-                case SHESH, JODI, JOTOKHON, PURNO, DOSHOMIK, DEKHAO -> true;
+                case SHESH, JODI, JOTOKHON, PURNO, DOSHOMIK, BAKKO, DEKHAO -> true;
                 default -> false;
             };
             if (atStatementStart) {
