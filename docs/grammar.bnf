@@ -5,11 +5,14 @@ Notation: ::= means "is defined as", | is alternation, { x } means zero-or-more
 repetitions of x, [ x ] means x is optional, terminals are quoted.
 
 Implementation status: every rule below is implemented by the lexer, parser,
-and semantic analyzer, and every statement form is handled by the Java code
-generator (ankur.codegen.JavaCodeGenerator) -- see "Compiling to Java" below
-for the source-to-target mapping. Nothing in this grammar is aspirational;
+and semantic analyzer, and every statement form is handled by all three code
+generators -- Java (ankur.codegen.JavaCodeGenerator), Python
+(ankur.codegen.PythonCodeGenerator) and WebAssembly
+(ankur.codegen.WasmCodeGenerator). The "Compiling to ..." sections below give
+the three source-to-target mappings. Nothing in this grammar is aspirational;
 docs/Ankur-Final-Report.md's Future Roadmap covers what's deliberately not
-in the language yet (booleans as a declarable type, functions, strings).
+in the language yet (booleans as a declarable type, functions, string
+operators).
 
 ------------------------------------------------------------------------
 Program
@@ -35,6 +38,7 @@ Declarations and Statements
 
 <type>               ::= "পূর্ণ"        (* int *)
                         | "দশমিক"      (* float *)
+                        | "বাক্য"       (* string *)
 
 <assignment>         ::= <identifier> "=" <expression> ";"
 
@@ -68,6 +72,7 @@ Expressions (precedence climbing, lowest to highest precedence)
 
 <primary>            ::= <int-literal>
                         | <float-literal>
+                        | <string-literal>
                         | <identifier>
                         | "(" <expression> ")"
 
@@ -81,6 +86,9 @@ Lexical Grammar
 
 <int-literal>         ::= <digit> { <digit> }
 <float-literal>       ::= <digit> { <digit> } "." <digit> { <digit> }
+<string-literal>      ::= '"' { <string-char> } '"'
+<string-char>         ::= any character except '"', backslash or newline
+                          | "\\" ( '"' | "\\" | "n" | "t" )
 <digit>               ::= bangla-digit | ascii-digit
 
 bangla-letter          ::= any character in Unicode U+0980..U+09FF that is
@@ -97,13 +105,20 @@ significant and may appear between any two tokens. Numeral scripts may be
 mixed freely: ৫ and 5 both denote the integer five.
 
 ------------------------------------------------------------------------
-Two Data Types (course requirement 2.1)
+Data Types (course requirement 2.1 asks for two; Ankur has three)
 ------------------------------------------------------------------------
 
 পূর্ণ    (Purno)     -- integer type
 দশমিক   (Doshomik)  -- floating point type
+বাক্য    (Bakko)     -- string type
 
-A third, non-declarable type, BOOLEAN, exists only as the result of
+A বাক্য can be declared, assigned and printed, but has no operators at all:
+concatenation would mean building a new string at run time, and the
+WebAssembly target has no allocator to build one with (its strings are
+constant bytes in linear memory). See the Future Roadmap in
+docs/Ankur-Final-Report.md.
+
+A fourth, non-declarable type, BOOLEAN, exists only as the result of
 relational (==, !=, <, >, <=, >=) and logical (&&, ||, !) operators. It
 cannot be stored in a variable in this version of the language -- see the
 "Future Roadmap" note in docs/Ankur-Final-Report.md. যদি/যতক্ষণ conditions
@@ -121,7 +136,9 @@ Type Checking Rules (implemented in ankur.semantic.SemanticAnalyzer)
 4. Logical operators (&& || !) require BOOLEAN operand(s); result is
    BOOLEAN.
 5. Assignment (including a var-decl initializer) allows পূর্ণ -> দশমিক
-   widening, but rejects দশমিক -> পূর্ণ narrowing as a type error.
+   widening, but rejects দশমিক -> পূর্ণ narrowing as a type error. A বাক্য
+   may only be assigned a বাক্য: there is no conversion in either direction.
+   দেখাও accepts any of the three types.
 6. Each block (if/else/while body) introduces a new scope; an inner
    declaration may shadow an outer one of the same name without error.
 7. A পূর্ণ literal must fit in a 32-bit signed int (matching the Java `int`
@@ -132,9 +149,99 @@ Compiling to Java (ankur.codegen.JavaCodeGenerator)
 ------------------------------------------------------------------------
 
 পূর্ণ -> int, দশমিক -> double. Operators map 1:1 to Java's own symbols, so
-no translation table is needed there. Every generated variable name is
-prefixed ("v_<name>_<n>") with a globally unique counter per declaration --
-this is not cosmetic: Ankur allows a nested block to shadow an outer
-variable (rule 6 above), but Java rejects redeclaring a name already in an
-enclosing scope, so reusing the source name directly would make shadowing
-Ankur programs fail to compile.
+no translation table is needed there. Every declared name keeps the
+author's own Bangla identifier in the generated Java verbatim -- EXCEPT a
+genuine shadow: Ankur allows a nested block to shadow an outer variable
+(rule 6 above), but Java rejects redeclaring a name already in an
+enclosing scope, so only that inner, shadowing declaration is renamed
+("<name>_<n>"), the one place reusing the source name directly would make
+the Ankur program fail to compile.
+
+------------------------------------------------------------------------
+Compiling to Python (ankur.codegen.PythonCodeGenerator)
+------------------------------------------------------------------------
+
+The other target course requirement 2.1 allows. পূর্ণ -> int, দশমিক -> float,
+বাক্য -> str, and যদি/নাহলে/যতক্ষণ map to if/else/while. Two things do not
+translate literally:
+
+  /               Python's / always produces a float, so পূর্ণ / পূর্ণ is
+                  emitted as // (integer division) to match Ankur's rule 2
+
+  variables       Python has no block scope at all -- a name assigned
+                  inside an if is the same variable as one outside it --
+                  so a declaration that actually shadows an outer one gets
+                  renamed, exactly as in the Java target; an ordinary,
+                  non-shadowing declaration keeps the author's own name
+
+&& and || become and / or, ! becomes not, and an empty block becomes pass,
+since Python takes its block structure from indentation.
+
+------------------------------------------------------------------------
+Compiling to WebAssembly (ankur.codegen.WasmCodeGenerator)
+------------------------------------------------------------------------
+
+The optional target of course requirement 2.2. পূর্ণ -> i32, দশমিক -> f64.
+Output is both the text format (.wat) and a binary module (.wasm) encoded
+directly by ankur.codegen.wasm.WasmBinaryWriter, so no external assembler
+is needed.
+
+WebAssembly is a typed stack machine rather than a structured high-level
+language, so the mapping is less direct than the Java one:
+
+  expression      operands are pushed first, the operator instruction
+                  consumes them (post-order), e.g. ক + খ becomes
+                  local.get, local.get, i32.add
+
+  int -> float    emitted explicitly as f64.convert_i32_s. WebAssembly has
+                  no implicit conversion, so every place rule 2 or rule 5
+                  above allows a পূর্ণ where a দশমিক is expected needs one
+
+  variables       every declaration gets its own function-level local
+                  index (locals must all be declared at the top of a
+                  function), which is also what makes shadowing work
+
+  যদি / নাহলে      if / else / end
+
+  যতক্ষণ           block { loop { <cond> i32.eqz br_if 1 <body> br 0 } }
+                  -- there is no while instruction; the block supplies the
+                  exit target and the loop supplies the back edge
+
+  দেখাও            call to a host function imported as "অঙ্কুর"."দেখাও_পূর্ণ"
+                  or "দেখাও_দশমিক" -- a module has no I/O of its own
+
+  BOOLEAN         an i32 of 0 or 1, which is how WebAssembly itself models
+                  conditions
+
+  && and ||       a structured if that yields an i32, not i32.and/i32.or,
+                  because Ankur's operators short-circuit and the plain
+                  instructions would evaluate both sides
+
+  দশমিক %          a - trunc(a / b) * b, via scratch locals: WebAssembly
+                  has i32.rem_s but no f64 remainder instruction. পূর্ণ %
+                  maps straight to i32.rem_s
+
+  বাক্য            there is no string type. Every literal's UTF-8 bytes go
+                  into the module's data segment, and a বাক্য value is a
+                  (pointer, length) pair of i32s -- so a বাক্য variable
+                  occupies two locals, and দেখাও_বাক্য takes two arguments.
+                  The memory is exported so the host can read the bytes
+                  back out and decode them
+
+------------------------------------------------------------------------
+Intermediate Representation (ankur.tac.TacGenerator)
+------------------------------------------------------------------------
+
+Between semantic analysis and the code generators, the validated AST is
+also lowered to three-address code: every expression is flattened into one
+operation per instruction over named operands (t1, t2, ...), and যদি and
+যতক্ষণ become explicit labels and jumps.
+
+  যদি (c) A নাহলে B     ifFalse c goto L1 / A / goto L2 / L1: / B / L2:
+  যতক্ষণ (c) B          L1: / ifFalse c goto L2 / B / goto L1 / L2:
+
+The three code generators walk the AST rather than this list, because all
+three targets have structured control flow of their own and would only have
+to rebuild it from the jumps. TAC is the representation an optimiser or a
+real machine backend would start from, and it is written to
+generated/<Name>.tac on every run.
